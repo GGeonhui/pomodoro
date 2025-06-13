@@ -82,20 +82,84 @@ def play_alarm():
     except:
         print("🔔 알람! 시간이 완료되었습니다!")
 
+def generate_synthetic_data():
+    """개선된 가상 데이터 생성 함수 (data.py 로직 적용)"""
+    np.random.seed(42)
+    n = 200
+    
+    # 베타분포를 사용한 현실적인 감정 분포
+    df = pd.DataFrame({
+        "angry": np.random.beta(3, 4, n),            # 매우 집중할 때 높아짐 (중간~높은 값 분포)
+        "disgust": np.random.beta(1, 9, n),          # 기본적으로 낮게 유지 (거의 0에 가까움)
+        "fear": np.random.beta(3, 4, n),             # 매우 집중할 때 높아짐 (중간~높은 값 분포)
+        "happy": np.random.beta(1, 9, n),            # 기본적으로 낮게 유지 (거의 0에 가까움)
+        "sad": np.random.beta(3, 4, n),              # 매우 집중할 때 높아짐 (중간~높은 값 분포)
+        "surprise": np.random.beta(1, 9, n),         # 기본적으로 낮게 유지 (거의 0에 가까움)
+        "neutral": np.random.beta(4, 3, n),          # 보통 집중할 때 높아짐 (높은 값 분포)
+        "attention": np.random.uniform(0.3, 0.95, n) # 집중도 범위 (산만:0.3~0.5, 보통:0.5~0.7, 높음:0.7~0.8)
+    })
+    
+    # 개선된 가중치 (data.py에서 가져온 값)
+    weights = np.array([
+        1.1,    # angry: 증가
+        0.0,    # disgust: 의미 없음
+        1.1,    # fear: 증가
+        0.0,   # happy: 감소
+        1.1,    # sad: 증가
+        0.0,   # surprise: 의미 없음
+        -0.5,   # neutral: 보통 집중 → 시간 감소 (더 높은 집중 유도)
+        0.8     # attention: 시선 집중도
+    ])
+    
+    # 노이즈 추가
+    noise = np.random.normal(0, 1.5, n)
+    
+    # 추천 시간 계산
+    df["recommended_minutes"] = 25 + df[df.columns].values @ weights + noise
+    
+    # 범위 조정 (20-50분)
+    df["recommended_minutes"] = np.clip(df["recommended_minutes"], 20, 50)
+    
+    # 특별한 경우 처리: attention이 매우 낮으면 30분 이상
+    low_attention_mask = df["attention"] < 0.5
+    df.loc[low_attention_mask, "recommended_minutes"] = np.clip(
+        df.loc[low_attention_mask, "recommended_minutes"], 30, 50
+    )
+    
+    return df
+
+def calculate_recommendation_with_improved_logic(df_grouped):
+    """개선된 추천 로직 (session_core.py 로직 적용)"""
+    # 집중 상태 분석
+    angry_score = df_grouped['angry'].iloc[0]
+    neutral_score = df_grouped['neutral'].iloc[0]
+    attention_score = df_grouped['attention'].iloc[0]
+    
+    # 집중 상태별 시간 추천 로직
+    if angry_score > 0.12 and attention_score >= 0.5:  # 매우 집중 상태
+        recommended_time = 25 + angry_score * 15 + attention_score * 10
+        status = f"매우 집중 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 집중력 유지하며 시간 증가"
+    elif neutral_score >= 0.6 and attention_score >= 0.5: # 보통 집중 상태
+        recommended_time = max(20, 25 - neutral_score * 8)
+        status = f"보통 집중 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 더 높은 집중 유도를 위해 시간 단축"
+    else:  # 산만한 상태
+        recommended_time = 30.0
+        status = f"산만함 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 차분히 앉아있기 위해 긴 시간 권장"
+    
+    # 추천 시간 범위 제한 (20-50분)
+    recommended_time = np.clip(recommended_time, 20, 50)
+    
+    return recommended_time, status
+
 @st.cache_resource
 def train_model():
-    """머신러닝 모델 학습 함수"""
+    """머신러닝 모델 학습 함수 (개선된 데이터 사용)"""
     synthetic_path = "synthetic_sessions.csv"
     if not os.path.exists(synthetic_path):
-        # 기본 학습 데이터 생성
-        default_data = {
-            'angry': [0.1, 0.2, 0.05], 'disgust': [0.05, 0.1, 0.02],
-            'fear': [0.1, 0.15, 0.08], 'happy': [0.6, 0.4, 0.7],
-            'sad': [0.05, 0.1, 0.03], 'surprise': [0.05, 0.05, 0.07],
-            'neutral': [0.05, 0.1, 0.05], 'attention': [0.8, 0.6, 0.9],
-            'recommended_minutes': [25, 20, 30]
-        }
-        pd.DataFrame(default_data).to_csv(synthetic_path, index=False)
+        # 개선된 학습 데이터 생성
+        df = generate_synthetic_data()
+        df.to_csv(synthetic_path, index=False)
+        st.info("🔄 개선된 학습 데이터가 생성되었습니다.")
     
     df = pd.read_csv(synthetic_path)
     X = df[df.columns[:-1]]
@@ -113,11 +177,13 @@ model = train_model()
 if st.session_state.is_break_time:
     st.markdown("## ☕ 휴식 시간")
     
-    # 추천 시간 표시 (고정값)
+    # 추천 시간과 상태 표시
     if 'last_recommended_time' in st.session_state:
         st.success(f"✅ 다음 세션 추천 시간: **{st.session_state.last_recommended_time}분**")
+    if 'last_recommendation_status' in st.session_state:
+        st.info(f"📊 상태 분석: {st.session_state.last_recommendation_status}")
     
-    break_placeholder = st.empty()  # 실시간 업데이트용 placeholder
+    break_placeholder = st.empty()
     
     while st.session_state.is_break_time:
         current_time = time.time()
@@ -128,7 +194,7 @@ if st.session_state.is_break_time:
             minutes = int(break_remaining // 60)
             seconds = int(break_remaining % 60)
             break_placeholder.info(f"🛌 휴식 중... 남은 시간: {minutes:02d}:{seconds:02d}")
-            time.sleep(1)  # 1초마다 업데이트
+            time.sleep(1)
         else:
             # 휴식 시간 완료
             st.session_state.is_break_time = False
@@ -152,7 +218,7 @@ else:
         step=0.5
     )
 
-    # 제어 버튼들 (세션 시간 설정 바로 아래로 이동)
+    # 제어 버튼들
     st.markdown("## 🎮 세션 제어")
     button_col1, button_col2, button_col3 = st.columns(3)
 
@@ -185,9 +251,8 @@ else:
             st.session_state.pause_start_time = 0
             st.info("초기화되었습니다.")
 
-    # 과거 세션 데이터 시각화 및 관리 (측정 중이 아닐 때만 표시)
+    # 과거 세션 데이터 시각화 및 관리
     if not st.session_state.is_measuring:
-        # 좌우 컬럼 생성
         left_col, right_col = st.columns([1, 1])
         
         # 왼쪽: 추천 시간 트렌드 그래프
@@ -197,14 +262,12 @@ else:
             df_hist = pd.read_sql_query("SELECT * FROM sessions", conn)
             if not df_hist.empty:
                 fig_hist, ax_hist = plt.subplots(figsize=(6, 4))
-                # x축을 1 단위로 설정
                 session_numbers = range(1, len(df_hist) + 1)
                 ax_hist.plot(session_numbers, df_hist["recommended_minutes"], marker='o', color='#1f77b4')
                 ax_hist.set_xlabel("Session Number")
                 ax_hist.set_ylabel("Recommended Time (min)")
                 ax_hist.set_title("Recommendation Trend")
                 ax_hist.grid(True, alpha=0.3)
-                # x축 눈금을 정수로 설정
                 ax_hist.set_xticks(session_numbers)
                 st.pyplot(fig_hist)
             else:
@@ -215,7 +278,6 @@ else:
             st.subheader("📋 Session Management")
             
             if not df_hist.empty:
-                # 세션 데이터 테이블 생성 (Session Number 추가)
                 session_table = pd.DataFrame({
                     'Session #': range(1, len(df_hist) + 1),
                     'Date': df_hist['session_date'].fillna('N/A'),
@@ -224,12 +286,9 @@ else:
                     'Recommended (min)': df_hist['recommended_minutes'].round(1)
                 })
                 
-                # 최신 순으로 정렬 (Session # 역순)
                 session_table = session_table.iloc[::-1].reset_index(drop=True)
-                # Session # 컬럼도 역순으로 재정렬
                 session_table['Session #'] = range(len(df_hist), 0, -1)
                 
-                # 테이블 표시 with custom CSS for center alignment
                 st.markdown("""
                 <style>
                 .dataframe td, .dataframe th {
@@ -245,7 +304,7 @@ else:
                     height=250
                 )
                 
-                # 통계 정보 표시 (순서 변경: Total Sessions, Avg Attention, Avg Recommended)
+                # 통계 정보 표시
                 st.markdown("### 📈 Statistics")
                 col1, col2, col3 = st.columns(3)
                 
@@ -264,9 +323,9 @@ else:
             else:
                 st.info("No session data available yet. Complete your first session to see management data!")
         
-        # Reset 버튼 (하단 중앙에 배치)
+        # Reset 버튼
         st.markdown("---")
-        reset_col = st.columns([2, 1, 2])[1]  # 중앙 정렬
+        reset_col = st.columns([2, 1, 2])[1]
         with reset_col:
             if st.button("🗑️ Reset All Sessions"):
                 cursor.execute("DELETE FROM sessions")
@@ -296,10 +355,9 @@ if st.session_state.is_measuring:
     attn_scores = st.session_state.attn_scores
 
     # UI 레이아웃 (측정 중)
-    col1, col2 = st.columns([1, 1])  # 좌우 1:1 비율
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        # 영상 위에 감정상태/집중도/타이머 표시
         emotion_placeholder = st.empty()
         timer_placeholder = st.empty()
         frame_placeholder = st.empty()
@@ -311,7 +369,7 @@ if st.session_state.is_measuring:
     while st.session_state.is_measuring:
         current_time = time.time()
         
-        # 경과 시간 계산 (일시정지 고려)
+        # 경과 시간 계산
         if not st.session_state.is_paused:
             effective_elapsed = (current_time - start_time) - st.session_state.total_elapsed_time
         else:
@@ -338,24 +396,32 @@ if st.session_state.is_measuring:
                 avg_attention = df["attention"].mean()
                 df_grouped = df[['angry','disgust','fear','happy','sad','surprise','neutral','attention']].mean().to_frame().T
 
-                # 추천 시간 예측
-                recommended_time = round(float(model.predict(df_grouped)[0]), 2)
-                st.session_state.last_recommended_time = recommended_time
+                # 개선된 추천 로직 사용
+                recommended_time, recommendation_status = calculate_recommendation_with_improved_logic(df_grouped)
+                
+                # 랜덤포레스트 모델 예측도 함께 사용 (하이브리드 방식)
+                model_prediction = round(float(model.predict(df_grouped)[0]), 2)
+                
+                # 두 방식의 평균을 최종 추천으로 사용
+                final_recommendation = round((recommended_time + model_prediction) / 2, 2)
+                
+                st.session_state.last_recommended_time = final_recommendation
+                st.session_state.last_recommendation_status = recommendation_status
 
                 # 현재 시간과 세션 시간 저장
                 current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                session_duration = session_time  # 설정된 세션 시간
+                session_duration = session_time
 
-                # DB 저장 (날짜와 세션 시간 포함)
+                # DB 저장
                 cursor.execute("""
                     INSERT INTO sessions (angry, disgust, fear, happy, sad, surprise, neutral, attention, recommended_minutes, session_date, session_duration)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, tuple(df_grouped.iloc[0]) + (recommended_time, current_datetime, session_duration))
+                """, tuple(df_grouped.iloc[0]) + (final_recommendation, current_datetime, session_duration))
                 conn.commit()
 
                 # CSV 저장 (학습 데이터 축적)
                 synthetic_path = "synthetic_sessions.csv"
-                df_grouped["recommended_minutes"] = recommended_time
+                df_grouped["recommended_minutes"] = final_recommendation
                 if os.path.exists(synthetic_path):
                     existing = pd.read_csv(synthetic_path)
                     updated = pd.concat([existing, df_grouped], ignore_index=True)
@@ -425,19 +491,19 @@ if st.session_state.is_measuring:
                 else:
                     emotion_placeholder.markdown("⏸️ **일시정지 중**")
 
-                # 타이머 표시 (영상 위에)
+                # 타이머 표시
                 remaining_time = session_time * 60 - effective_elapsed
                 minutes = int(remaining_time // 60)
                 seconds = int(remaining_time % 60)
                 status = "⏸️ 일시정지" if st.session_state.is_paused else "▶️ 측정 중"
                 timer_placeholder.markdown(f"**{status}**  \n남은 시간: `{minutes:02d}:{seconds:02d}`")
 
-                # 영상 표시 (좌우 반전)
+                # 영상 표시
                 frame_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame_display = cv2.flip(frame_display, 1)
                 frame_placeholder.image(frame_display, channels="RGB")
 
-                # 집중도 그래프 업데이트 (오른쪽 컬럼)
+                # 집중도 그래프 업데이트
                 if timestamps and attn_scores:
                     fig, ax = plt.subplots()
                     fig.set_size_inches(6, 4)
