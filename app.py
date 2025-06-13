@@ -1,5 +1,4 @@
-# 쉬는 시간동안의 화면 수정
-# 코드 전체적으로 실행 순서에 따라 정리리: 초기화 → UI 분기 → 측정/휴식 처리
+# 화면 ui 정리
 
 # === 1. 라이브러리 import ===
 import streamlit as st                       # Streamlit 웹 앱 UI 생성
@@ -132,30 +131,7 @@ else:
         step=0.5
     )
 
-    # 과거 세션 데이터 시각화
-    st.subheader("📊 Previous Session Recommendation Trend")
-    col_a, col_b = st.columns([4, 1])
-    
-    with col_a:
-        df_hist = pd.read_sql_query("SELECT * FROM sessions", conn)
-        if not df_hist.empty:
-            fig_hist, ax_hist = plt.subplots()
-            ax_hist.plot(df_hist.index + 1, df_hist["recommended_minutes"], marker='o')
-            ax_hist.set_xlabel("Session Number")
-            ax_hist.set_ylabel("Recommended Time (min)")
-            ax_hist.set_title("Recommendation Trend")
-            st.pyplot(fig_hist)
-        else:
-            st.info("No saved session data. Start your first measurement!")
-    
-    with col_b:
-        if st.button("🗑️ Reset Sessions"):
-            cursor.execute("DELETE FROM sessions")
-            conn.commit()
-            st.success("Session history has been cleared.")
-            st.rerun()
-
-    # 제어 버튼들
+    # 제어 버튼들 (세션 시간 설정 바로 아래로 이동)
     st.markdown("## 🎮 세션 제어")
     button_col1, button_col2, button_col3 = st.columns(3)
 
@@ -188,6 +164,32 @@ else:
             st.session_state.pause_start_time = 0
             st.info("초기화되었습니다.")
 
+    # 과거 세션 데이터 시각화 (측정 중이 아닐 때만 표시)
+    if not st.session_state.is_measuring:
+        st.subheader("📊 Previous Session Recommendation Trend")
+        
+        # 그래프를 더 작게 만들기 위해 컬럼 구조 변경
+        graph_col = st.columns([2, 2])[0]  # 왼쪽 절반만 사용
+        
+        with graph_col:
+            df_hist = pd.read_sql_query("SELECT * FROM sessions", conn)
+            if not df_hist.empty:
+                fig_hist, ax_hist = plt.subplots(figsize=(6, 3))  # 그래프 크기 축소
+                ax_hist.plot(df_hist.index + 1, df_hist["recommended_minutes"], marker='o')
+                ax_hist.set_xlabel("Session Number")
+                ax_hist.set_ylabel("Recommended Time (min)")
+                ax_hist.set_title("Recommendation Trend")
+                st.pyplot(fig_hist)
+            else:
+                st.info("No saved session data. Start your first measurement!")
+            
+            # Reset 버튼을 그래프 아래에 배치
+            if st.button("🗑️ Reset Sessions"):
+                cursor.execute("DELETE FROM sessions")
+                conn.commit()
+                st.success("Session history has been cleared.")
+                st.rerun()
+
 # === 7. 실시간 측정 처리 ===
 if st.session_state.is_measuring:
     # MediaPipe 및 FER 초기화
@@ -209,15 +211,18 @@ if st.session_state.is_measuring:
     timestamps = st.session_state.timestamps
     attn_scores = st.session_state.attn_scores
 
-    # UI 레이아웃
-    col1, col2 = st.columns([2, 1])
+    # UI 레이아웃 (측정 중)
+    col1, col2 = st.columns([1, 1])  # 좌우 1:1 비율
+    
     with col1:
-        frame_placeholder = st.empty()
-        graph_placeholder = st.empty()
-    with col2:
+        # 영상 위에 감정상태/집중도/타이머 표시
         emotion_placeholder = st.empty()
         timer_placeholder = st.empty()
+        frame_placeholder = st.empty()
         result_box = st.empty()
+        
+    with col2:
+        graph_placeholder = st.empty()
 
     # 실시간 측정 루프
     while st.session_state.is_measuring:
@@ -336,26 +341,28 @@ if st.session_state.is_measuring:
                 else:
                     emotion_placeholder.markdown("⏸️ **일시정지 중**")
 
+                # 타이머 표시 (영상 위에)
+                remaining_time = session_time * 60 - effective_elapsed
+                minutes = int(remaining_time // 60)
+                seconds = int(remaining_time % 60)
+                status = "⏸️ 일시정지" if st.session_state.is_paused else "▶️ 측정 중"
+                timer_placeholder.markdown(f"**{status}**  \n남은 시간: `{minutes:02d}:{seconds:02d}`")
+
                 # 영상 표시 (좌우 반전)
                 frame_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame_display = cv2.flip(frame_display, 1)
                 frame_placeholder.image(frame_display, channels="RGB")
 
-                # 집중도 그래프 업데이트
+                # 집중도 그래프 업데이트 (오른쪽 컬럼)
                 if timestamps and attn_scores:
                     fig, ax = plt.subplots()
-                    fig.set_size_inches(5, 2.5)
+                    fig.set_size_inches(6, 4)
                     ax.plot(timestamps, attn_scores)
                     ax.set_ylim(0, 1)
                     ax.set_title("Real-time Attention")
+                    ax.set_xlabel("Time (seconds)")
+                    ax.set_ylabel("Attention Score")
                     graph_placeholder.pyplot(fig, use_container_width=True)
-
-                # 타이머 표시
-                remaining_time = session_time * 60 - effective_elapsed
-                minutes = int(remaining_time // 60)
-                seconds = int(remaining_time % 60)
-                status = "⏸️ 일시정지" if st.session_state.is_paused else "▶️ 측정 중"
-                timer_placeholder.markdown(f"**{status}**\n남은 시간: `{minutes:02d}:{seconds:02d}`")
 
             else:
                 st.error("카메라 오류")
