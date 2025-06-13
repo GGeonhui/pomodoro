@@ -527,7 +527,7 @@ if st.session_state.is_measuring:
 if not st.session_state.is_measuring and 'cap' in st.session_state and st.session_state.cap is not None:
     st.session_state.cap.release()
     st.session_state.cap = None
-=======
+    
 # 타이머 '시작,일시정지,재시작,초기화' 버튼 추가 + 남은시간 표시, 초기화 버튼 누르면 수집된 데이터는 저장되지 않고 삭제
 import streamlit as st                       # Streamlit 웹 앱 UI 생성을 위한 라이브러리
 import cv2                                   # OpenCV: 영상 처리용 라이브러리 (카메라 입력 등)
@@ -824,7 +824,7 @@ if st.session_state.is_measuring:
 if not st.session_state.is_measuring and 'cap' in st.session_state and st.session_state.cap is not None:
     st.session_state.cap.release()
     st.session_state.cap = None
-=======
+    
 
 # === 1. 라이브러리 import ===
 import streamlit as st                       # Streamlit: 웹 앱 UI를 쉽게 만들 수 있는 Python 라이브러리
@@ -1360,7 +1360,7 @@ if st.session_state.is_measuring:              # 측정 중인 상태라면
 if not st.session_state.is_measuring and 'cap' in st.session_state and st.session_state.cap is not None:  # 측정 중이 아니고 카메라 객체가 존재한다면
     st.session_state.cap.release()                                               # 카메라 리소스 해제
     st.session_state.cap = None                                                  # 카메라 객체를 None으로 설정하여 메모리 정리
-=======
+    
 # 타이머 '시작,일시정지,재시작,초기화' 버튼 추가 + 남은시간 표시, 초기화 버튼 누르면 수집된 데이터는 저장되지 않고 삭제
 import streamlit as st                       # Streamlit 웹 앱 UI 생성을 위한 라이브러리
 import cv2                                   # OpenCV: 영상 처리용 라이브러리 (카메라 입력 등)
@@ -1657,4 +1657,3 @@ if st.session_state.is_measuring:
 if not st.session_state.is_measuring and 'cap' in st.session_state and st.session_state.cap is not None:
     st.session_state.cap.release()
     st.session_state.cap = None
-
