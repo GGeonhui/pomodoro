@@ -25,7 +25,7 @@ if not os.path.exists(path):
     df["recommended_minutes"] = 30 + df[df.columns].values @ weights + noise
     df["recommended_minutes"] = np.clip(df["recommended_minutes"], 20, 60)
     df.to_csv(path, index=False)
-=======
+    
 # 기본 data 파일로부터 angry,sad,fear를 집중 표정으로 간주한 수정된 data 파일
 # pandas와 numpy는 데이터 다루는 데 필요한 파이썬 라이브러리
 import pandas as pd
