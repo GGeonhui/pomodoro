@@ -1,4 +1,4 @@
-# session_core1로부터 랜덤 포레스트 회귀 모델로 수정, 집중 상태 분석 및 추천 시간 계산 추가, 집중 상태별 시간 추천 로직 추가
+
 # --- 필요한 라이브러리 불러오기 ---
 import cv2  # OpenCV: 영상 처리 라이브러리
 import time  # 시간 측정용 라이브러리
@@ -138,21 +138,28 @@ def train_regression_model(data_path='session_data.csv', all_sessions_path='sess
     # .mean()은 각 열(column)의 평균을 계산, .to_frame()은 결과를 데이터프레임 형식으로 변환
     # .T는 행과 열을 뒤집어서(전치) 평균값들이 한 행(row)으로 만들어진 데이터프레임이 되도록 함
     
-    # 집중 상태 분석 및 추천 시간 계산
+
+    # 집중 상태 분석 및 추천 시간 계산 (수정된 부분)
     angry_score = df_grouped['angry'].iloc[0]
+    fear_score = df_grouped['fear'].iloc[0]
+    sad_score = df_grouped['sad'].iloc[0]
     neutral_score = df_grouped['neutral'].iloc[0]
     attention_score = df_grouped['attention'].iloc[0]
     
-    # 집중 상태별 시간 추천 로직
-    if angry_score > 0.12 and attention_score >= 0.5:  # 매우 집중 상태
-        recommended_time = 25 + angry_score * 15 + attention_score * 10
-        print(f"매우 집중 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 집중력 유지하며 시간 증가")
-    elif neutral_score >= 0.6 and attention_score >= 0.5: # 보통 집중 상태
+    # 집중 감정 점수 합계 계산
+    concentration_emotion_score = angry_score + fear_score + sad_score
+    
+    # 집중 상태별 시간 추천 로직 (수정된 부분)
+    if concentration_emotion_score > 0.25 and attention_score >= 0.55:  # 매우 집중 상태
+        recommended_time = 25 + concentration_emotion_score * 15 + attention_score * 10
+        print(f"매우 집중 (Angry: {angry_score:.2f}, Fear: {fear_score:.2f}, Sad: {sad_score:.2f}, 집중감정합계: {concentration_emotion_score:.2f}, Attention: {attention_score:.2f}) → 집중력 유지하며 시간 증가")
+    elif neutral_score >= 0.55 and attention_score >= 0.55: # 보통 집중 상태
         recommended_time = max(20, 25 - neutral_score * 8)
-        print(f"보통 집중 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 더 높은 집중 유도를 위해 시간 단축")
+        print(f"보통 집중 (Neutral: {neutral_score:.2f}, 집중감정합계: {concentration_emotion_score:.2f}, Attention: {attention_score:.2f}) → 더 높은 집중 유도를 위해 시간 단축")
     else:  # 산만한 상태
         recommended_time = 30.0
-        print(f"산만함 (Neutral: {neutral_score:.2f}, Angry: {angry_score:.2f}, Attention: {attention_score:.2f}) → 차분히 앉아있기 위해 긴 시간 권장")
+        print(f"산만함 (Neutral: {neutral_score:.2f}, 집중감정합계: {concentration_emotion_score:.2f}, Attention: {attention_score:.2f}) → 차분히 앉아있기 위해 긴 시간 권장")
+
     
     # 추천 시간 범위 제한 (20-50분)
     recommended_time = np.clip(recommended_time, 20, 50)
@@ -213,4 +220,6 @@ def run_pomodoro_session(initial_duration=1, break_duration=0.17):
     next_duration = ask_next_duration(recommended_duration) # 사용자가 입력한 시간이 next_duration 변수에 저장
     print(f"⏱ 다음 세션 시간: {next_duration}분으로 설정됨.\n")
     
+
     return next_duration  # 다음 세션에서 사용할 시간(next_duration)을 반환해서 외부에서도 쓸 수 있게 함
+
