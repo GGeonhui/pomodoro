@@ -1,4 +1,4 @@
-# 알람 및 5분 휴식시간 추가
+# 쉬는 시간동안의 상태바와 새로고침 없애서 화면 끊기는 상태 방지, 카메라 좌우 반전 적용
 import streamlit as st                       # Streamlit 웹 앱 UI 생성을 위한 라이브러리
 import cv2                                   # OpenCV: 영상 처리용 라이브러리 (카메라 입력 등)
 import numpy as np                           # Numpy: 수치 계산용 라이브러리
@@ -16,7 +16,7 @@ import winsound                              # Windows 알람 소리용 라이�
 st.set_page_config(layout="wide")
 
 # 페이지 제목 설정
-st.title("🎯 감정/집중도 기반 맞춤형 Pomodoro 타이머")
+st.title("🎯 감정/집중도 기반 맞춤형 Pomodoro Timer")
 
 # --- 세션 상태 초기화 ---
 if 'is_measuring' not in st.session_state:
@@ -82,41 +82,37 @@ if st.session_state.is_break_time and st.session_state.break_start_time > 0:
 
 # 세션 시간 입력 (추천 시간이 있으면 그것을 기본값으로 사용)
 session_time = st.number_input(
-    "측정할 세션 시간 (분)", 
+    "측정할 세션 시간(분)", 
     min_value=0.5, 
     max_value=60.0, 
     value=st.session_state.recommended_time, 
     step=0.5
 )
-
 # --- 휴식 시간 표시 ---
 if st.session_state.is_break_time:
     st.markdown("## ☕ 휴식 시간")
-    current_time = time.time()
-    break_elapsed = current_time - st.session_state.break_start_time
-    break_remaining = 300 - break_elapsed  # 5분 = 300초
+    break_placeholder = st.empty()  # 실시간 업데이트용 placeholder 추가
     
-    if break_remaining > 0:
-        minutes = int(break_remaining // 60)
-        seconds = int(break_remaining % 60)
-        st.info(f"🛌 휴식 중... 남은 시간: {minutes:02d}:{seconds:02d}")
+    while st.session_state.is_break_time:
+        current_time = time.time()
+        break_elapsed = current_time - st.session_state.break_start_time
+        break_remaining = 60 - break_elapsed  # 1분 = 60초
         
-        # 진행률 바 표시
-        progress = break_elapsed / 300
-        st.progress(progress)
-        
-        # 자동 새로고침을 위해 1초마다 rerun
-        time.sleep(1)
-        st.rerun()
-    else:
-        # 휴식 시간 완료
-        st.session_state.is_break_time = False
-        st.session_state.break_start_time = 0
-        if 'last_recommended_time' in st.session_state:
-            st.session_state.recommended_time = st.session_state.last_recommended_time
-        play_alarm()
-        st.success("🎉 휴식 시간이 완료되었습니다!")
-        st.rerun()
+        if break_remaining > 0:
+            minutes = int(break_remaining // 60)
+            seconds = int(break_remaining % 60)
+            break_placeholder.info(f"🛌 휴식 중... 남은 시간: {minutes:02d}:{seconds:02d}")
+            time.sleep(1)  # 1초마다 업데이트
+        else:
+            # 휴식 시간 완료
+            st.session_state.is_break_time = False
+            st.session_state.break_start_time = 0
+            if 'last_recommended_time' in st.session_state:
+                st.session_state.recommended_time = st.session_state.last_recommended_time
+            play_alarm()
+            break_placeholder.success("🎉 휴식 시간이 완료되었습니다!")
+            st.rerun()
+            break
 
 # --- 과거 세션 데이터 시각화 ---
 if not st.session_state.is_break_time:  # 휴식 시간이 아닐 때만 표시
@@ -268,7 +264,7 @@ if st.session_state.is_measuring:
                 st.session_state.last_recommended_time = recommended_time
                 
                 result_box.success(f"✅ 측정 완료! 추천 시간: **{recommended_time}분**")  # 결과 출력
-                st.info("🔔 5분 휴식 시간이 시작됩니다!")
+                st.info("🔔 1분 휴식 시간이 시작됩니다!")
 
                 # DB에 저장
                 cursor.execute("""
@@ -287,7 +283,7 @@ if st.session_state.is_measuring:
                 else:
                     df_grouped.to_csv(synthetic_path, index=False)  # 없으면 새로 생성
 
-                # 5분 휴식 시간 시작
+                # 1분 휴식 시간 시작
                 st.session_state.is_break_time = True
                 st.session_state.break_start_time = time.time()
             
@@ -348,8 +344,9 @@ if st.session_state.is_measuring:
                     # 일시정지 중일 때는 마지막 감정 상태 유지
                     emotion_placeholder.markdown("⏸️ **일시정지 중**")
 
-                # 영상은 일시정지 중에도 계속 표시
-                frame_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)     # 영상 변환 후 표시
+                # 영상은 일시정지 중에도 계속 표시 (좌우 반전)
+                frame_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)     # 영상 변환
+                frame_display = cv2.flip(frame_display, 1)                 # 좌우 반전 (거울 효과)
                 frame_placeholder.image(frame_display, channels="RGB")     # 실시간 영상 출력
 
                 # 그래프 업데이트 (데이터가 있을 때만)
@@ -375,7 +372,7 @@ if st.session_state.is_measuring:
                     st.session_state.cap.release()
                     st.session_state.cap = None
                 break
-
+        
 # 카메라 정리 (세션 종료 시)
 if not st.session_state.is_measuring and 'cap' in st.session_state and st.session_state.cap is not None:
     st.session_state.cap.release()
