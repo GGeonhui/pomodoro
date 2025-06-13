@@ -1,5 +1,3 @@
-# Session Managements (세션(= 1 focus timer + 1 break timer) 관리) 추가
-
 # === 1. 라이브러리 import ===
 import streamlit as st                       # Streamlit 웹 앱 UI 생성
 import cv2                                   # OpenCV: 영상 처리용 라이브러리
@@ -14,10 +12,30 @@ import sqlite3                               # SQLite 데이터베이스 연동
 import os                                    # OS 관련 함수
 import winsound                              # Windows 알람 소리용
 from datetime import datetime                # 날짜 시간 처리용
+import signal                                # 프로그램 종료용
 
 # === 2. Streamlit 페이지 설정 ===
 st.set_page_config(layout="wide")
-st.title("🎯 감정/집중도 기반 맞춤형 Pomodoro Timer")
+
+# 제목과 종료 버튼을 한 줄에 배치
+title_col, exit_col = st.columns([5, 1])
+with title_col:
+    st.title("🎯 감정/집중도 기반 맞춤형 Pomodoro Timer")
+with exit_col:
+    if st.button("🚪 타이머 중지(종료)", type="secondary"):
+        # 측정 중이면 카메라 해제
+        if 'cap' in st.session_state and st.session_state.cap is not None:
+            st.session_state.cap.release()
+            cv2.destroyAllWindows()
+        
+        st.error("🚪 프로그램 종료 중...")
+        st.info("터미널에서 Ctrl+C를 눌러 완전히 종료하거나, 브라우저 탭을 닫아주세요.")
+        
+        # 프로세스 종료 시도
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except:
+            st.stop()
 
 # === 3. 세션 상태 초기화 ===
 if 'is_measuring' not in st.session_state:
@@ -179,11 +197,15 @@ else:
             df_hist = pd.read_sql_query("SELECT * FROM sessions", conn)
             if not df_hist.empty:
                 fig_hist, ax_hist = plt.subplots(figsize=(6, 4))
-                ax_hist.plot(df_hist.index + 1, df_hist["recommended_minutes"], marker='o', color='#1f77b4')
+                # x축을 1 단위로 설정
+                session_numbers = range(1, len(df_hist) + 1)
+                ax_hist.plot(session_numbers, df_hist["recommended_minutes"], marker='o', color='#1f77b4')
                 ax_hist.set_xlabel("Session Number")
                 ax_hist.set_ylabel("Recommended Time (min)")
                 ax_hist.set_title("Recommendation Trend")
                 ax_hist.grid(True, alpha=0.3)
+                # x축 눈금을 정수로 설정
+                ax_hist.set_xticks(session_numbers)
                 st.pyplot(fig_hist)
             else:
                 st.info("No saved session data. Start your first measurement!")
@@ -193,18 +215,29 @@ else:
             st.subheader("📋 Session Management")
             
             if not df_hist.empty:
-                # 세션 데이터 테이블 생성
+                # 세션 데이터 테이블 생성 (Session Number 추가)
                 session_table = pd.DataFrame({
+                    'Session #': range(1, len(df_hist) + 1),
                     'Date': df_hist['session_date'].fillna('N/A'),
                     'Duration (min)': df_hist['session_duration'].fillna(0).round(1),
                     'Avg Attention': df_hist['attention'].round(3),
                     'Recommended (min)': df_hist['recommended_minutes'].round(1)
                 })
                 
-                # 최신 순으로 정렬
+                # 최신 순으로 정렬 (Session # 역순)
                 session_table = session_table.iloc[::-1].reset_index(drop=True)
+                # Session # 컬럼도 역순으로 재정렬
+                session_table['Session #'] = range(len(df_hist), 0, -1)
                 
-                # 테이블 표시 (인덱스 숨기기)
+                # 테이블 표시 with custom CSS for center alignment
+                st.markdown("""
+                <style>
+                .dataframe td, .dataframe th {
+                    text-align: center !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
                 st.dataframe(
                     session_table, 
                     use_container_width=True,
@@ -212,21 +245,21 @@ else:
                     height=250
                 )
                 
-                # 통계 정보 표시
+                # 통계 정보 표시 (순서 변경: Total Sessions, Avg Attention, Avg Recommended)
                 st.markdown("### 📈 Statistics")
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
+                    total_sessions = len(df_hist)
+                    st.metric("Total Sessions", total_sessions)
+                
+                with col2:
                     avg_attention = df_hist['attention'].mean()
                     st.metric("Avg Attention", f"{avg_attention:.3f}")
                 
-                with col2:
+                with col3:
                     avg_recommended = df_hist['recommended_minutes'].mean()
                     st.metric("Avg Recommended", f"{avg_recommended:.1f}min")
-                
-                with col3:
-                    total_sessions = len(df_hist)
-                    st.metric("Total Sessions", total_sessions)
                     
             else:
                 st.info("No session data available yet. Complete your first session to see management data!")
@@ -270,7 +303,6 @@ if st.session_state.is_measuring:
         emotion_placeholder = st.empty()
         timer_placeholder = st.empty()
         frame_placeholder = st.empty()
-        result_box = st.empty()
         
     with col2:
         graph_placeholder = st.empty()
@@ -309,9 +341,6 @@ if st.session_state.is_measuring:
                 # 추천 시간 예측
                 recommended_time = round(float(model.predict(df_grouped)[0]), 2)
                 st.session_state.last_recommended_time = recommended_time
-                
-                result_box.success(f"✅ 측정 완료! 추천 시간: **{recommended_time}분**")
-                st.info("🔔 1분 휴식 시간이 시작됩니다!")
 
                 # 현재 시간과 세션 시간 저장
                 current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
