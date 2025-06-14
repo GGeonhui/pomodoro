@@ -1,4 +1,4 @@
-# 이전 session_core로부터 감정상태 추가(sad,fear)
+
 # --- 필요한 라이브러리 불러오기 ---
 import cv2  # OpenCV: 영상 처리 라이브러리
 import time  # 시간 측정용 라이브러리
@@ -138,6 +138,7 @@ def train_regression_model(data_path='session_data.csv', all_sessions_path='sess
     # .mean()은 각 열(column)의 평균을 계산, .to_frame()은 결과를 데이터프레임 형식으로 변환
     # .T는 행과 열을 뒤집어서(전치) 평균값들이 한 행(row)으로 만들어진 데이터프레임이 되도록 함
     
+
     # 집중 상태 분석 및 추천 시간 계산 (수정된 부분)
     angry_score = df_grouped['angry'].iloc[0]
     fear_score = df_grouped['fear'].iloc[0]
@@ -158,6 +159,7 @@ def train_regression_model(data_path='session_data.csv', all_sessions_path='sess
     else:  # 산만한 상태
         recommended_time = 30.0
         print(f"산만함 (Neutral: {neutral_score:.2f}, 집중감정합계: {concentration_emotion_score:.2f}, Attention: {attention_score:.2f}) → 차분히 앉아있기 위해 긴 시간 권장")
+
     
     # 추천 시간 범위 제한 (20-50분)
     recommended_time = np.clip(recommended_time, 20, 50)
@@ -218,4 +220,6 @@ def run_pomodoro_session(initial_duration=1, break_duration=0.17):
     next_duration = ask_next_duration(recommended_duration) # 사용자가 입력한 시간이 next_duration 변수에 저장
     print(f"⏱ 다음 세션 시간: {next_duration}분으로 설정됨.\n")
     
+
     return next_duration  # 다음 세션에서 사용할 시간(next_duration)을 반환해서 외부에서도 쓸 수 있게 함
+
